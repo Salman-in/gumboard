@@ -8,8 +8,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ChecklistItem as ChecklistItemComponent, ChecklistItem } from "@/components/checklist-item";
 import { cn } from "@/lib/utils";
-import { Trash2, Plus, Archive } from "lucide-react";
+import { Trash2, Plus, Archive, MessageSquareText, ArrowUp } from "lucide-react";
 import { useTheme } from "next-themes";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 
 // Core domain types
 export interface User {
@@ -25,11 +30,24 @@ export interface Board {
   description: string | null;
 }
 
+export interface Comment {
+  id: string;
+  content: string;
+  userId: string;
+  createdAt?: string;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string;
+  };
+}
+
 export interface Note {
   id: string;
   content: string;
   color: string;
   done: boolean;
+  comments: Comment[] | null | undefined; 
   createdAt: string;
   updatedAt: string;
   checklistItems?: ChecklistItem[];
@@ -60,6 +78,8 @@ interface NoteProps {
   onEditChecklistItem?: (noteId: string, itemId: string, content: string) => void;
   onDeleteChecklistItem?: (noteId: string, itemId: string) => void;
   onSplitChecklistItem?: (noteId: string, itemId: string, content: string, cursorPosition: number) => void;
+  onAddComment?: (noteId: string, content: string) => void;
+  onDeleteComment?: (noteId: string, commentId: string) => void;
   readonly?: boolean;
   showBoardName?: boolean;
   className?: string;
@@ -77,6 +97,8 @@ export function Note({
   onEditChecklistItem,
   onDeleteChecklistItem,
   onSplitChecklistItem,
+  onAddComment,
+  onDeleteComment,
   readonly = false,
   showBoardName = false,
   className,
@@ -87,6 +109,8 @@ export function Note({
   const [editContent, setEditContent] = useState(note.content);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editingItemContent, setEditingItemContent] = useState("");
+  const [commentPopoverOpen, setCommentPopoverOpen] = useState(false);
+  const [commentContent, setCommentContent] = useState("");
   const [addingItem, setAddingItem] = useState(
     !readonly &&
     currentUser &&
@@ -96,6 +120,14 @@ export function Note({
   const [newItemContent, setNewItemContent] = useState("");
 
   const canEdit = !readonly && (currentUser?.id === note.user.id || currentUser?.isAdmin);
+
+  // Ensure comments is always an array - handle all possible falsy values
+  const comments = React.useMemo(() => {
+    if (Array.isArray(note.comments)) {
+      return note.comments;
+    }
+    return [];
+  }, [note.comments]);
 
   const handleStartEdit = () => {
     if (canEdit) {
@@ -164,6 +196,29 @@ export function Note({
     }
   };
 
+  // Handle comment submission with optimistic update
+  const handleSubmitComment = () => {
+    if (commentContent.trim() && onAddComment) {
+      onAddComment(note.id, commentContent.trim());
+      setCommentContent("");
+    }
+  };
+
+  // Handle Enter key for comment submission
+  const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmitComment();
+    }
+  };
+
+  // Delete comment handler
+  const handleDeleteComment = async (commentId: string) => {
+    if (onDeleteComment) {
+      onDeleteComment(note.id, commentId);
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -190,29 +245,110 @@ export function Note({
                 ? note.user.name.split(" ")[0]
                 : note.user.email.split("@")[0]}
             </span>
-            <div className="flex flex-col">
-              {showBoardName && note.board && (
-                <span className="text-xs text-blue-600 dark:text-blue-400 opacity-80 font-medium truncate max-w-20">
-                  {note.board.name}
-                </span>
-              )}
-            </div>
+            {showBoardName && note.board && (
+              <span className="text-xs text-blue-600 dark:text-blue-400 opacity-80 font-medium truncate max-w-20">
+                {note.board.name}
+              </span>
+            )}
           </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          {canEdit && (
-            <div className="flex space-x-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          
+          <Popover open={commentPopoverOpen} onOpenChange={setCommentPopoverOpen}>
+            <PopoverTrigger asChild>
               <Button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete?.(note.id);
+                  setCommentPopoverOpen(true);
                 }}
-                className="p-1 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded"
+                className="text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 transition-all opacity-0 group-hover:opacity-100"
                 variant="ghost"
-                size="icon"
+                size="sm"
               >
-                <Trash2 className="w-3 h-3" />
+                <MessageSquareText className="w-4 h-4" />
               </Button>
+            </PopoverTrigger>
+            <PopoverContent className="bg-neutral-950 border border-neutral-600 w-80 p-4 ml-30">
+              <p className="pb-3 text-sm font-medium text-neutral-200">Comments</p>
+
+              {/* Show comments list */}
+              <div className="space-y-2 mb-3">
+                {comments.length > 0 ? (
+                  comments.map((comment: Comment) => (
+                    <div key={comment.id} className="flex items-start justify-between bg-neutral-900 rounded px-2 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Avatar className="h-5 w-5 border border-white dark:border-zinc-800">
+                            <AvatarFallback className="bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold">
+                              {comment.user?.name
+                                ? comment.user.name.charAt(0).toUpperCase()
+                                : comment.user?.email?.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-xs font-medium text-neutral-400">
+                            {comment.user?.name || (comment.user?.email ? comment.user.email.split('@')[0] : 'Unknown User')}
+                          </span>
+                          {comment.createdAt && (
+                            <span className="text-[10px] text-neutral-500 ml-2">
+                              {new Date(comment.createdAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-neutral-200 break-words">{comment.content}</span>
+                      </div>
+                      {currentUser?.id === comment.userId && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="ml-2 text-red-400 hover:text-red-600 flex-shrink-0"
+                          onClick={() => handleDeleteComment(comment.id)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-xs text-neutral-500">No comments yet.</span>
+                )}
+              </div>
+
+              <div className="relative">
+                <Input
+                  value={commentContent}
+                  onChange={(e) => setCommentContent(e.target.value)}
+                  onKeyDown={handleCommentKeyDown}
+                  placeholder="Add a comment..."
+                  className="border border-neutral-700 bg-neutral-900 text-neutral-200 placeholder-neutral-500 pr-12 rounded-full focus-visible:ring-1 focus-visible:ring-neutral-600"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={handleSubmitComment}
+                  disabled={!commentContent.trim()}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-neutral-800 hover:bg-neutral-700 h-8 w-8 flex items-center justify-center disabled:opacity-50"
+                >
+                  <ArrowUp className="w-4 h-4 text-neutral-300" />
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {canEdit && (
+            <div className="flex space-x-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete?.(note.id);
+              }}
+              className="p-1 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+              variant="ghost"
+              size="icon"
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
             </div>
           )}
           {canEdit && onArchive && (

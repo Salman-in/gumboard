@@ -27,6 +27,17 @@ export async function GET(
                 name: true,
                 email: true
               }
+            },
+            comments: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true
+                  }
+                }
+              }
             }
           }
         }

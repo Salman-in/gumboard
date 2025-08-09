@@ -46,6 +46,8 @@ export default function BoardPage({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   // Inline editing state removed; handled within Note component
+  // Show/hide completed notes
+  const [showDoneNotes, setShowDoneNotes] = useState(true);
   const [showBoardDropdown, setShowBoardDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showAddBoard, setShowAddBoard] = useState(false);
@@ -876,7 +878,7 @@ export default function BoardPage({
         console.error("Server error, reverting optimistic update");
         const revertedNote = { ...currentNote, content: originalContent };
         setNotes(notes.map((n) => (n.id === noteId ? revertedNote : n)));
-        
+
         // Show error dialog; editing handled inside Note component
 
         const errorData = await response.json();
@@ -888,16 +890,16 @@ export default function BoardPage({
       }
     } catch (error) {
       console.error("Error updating note:", error);
-      
+
       // Revert optimistic update on network error
       const currentNote = notes.find((n) => n.id === noteId);
       if (currentNote) {
         // Editing handled within Note component; just keep UI consistent
       }
-      
+
       setErrorDialog({
         open: true,
-        title: "Connection Error", 
+        title: "Connection Error",
         description: "Failed to save note. Please try again.",
       });
     }
@@ -1092,7 +1094,7 @@ export default function BoardPage({
           if (!response.ok) {
             console.error("Server error, reverting optimistic update");
             setNotes(notes.map((n) => (n.id === noteId ? currentNote : n)));
-            
+
             setErrorDialog({
               open: true,
               title: "Update Failed",
@@ -1106,7 +1108,7 @@ export default function BoardPage({
         .catch((error) => {
           console.error("Error toggling checklist item:", error);
           setNotes(notes.map((n) => (n.id === noteId ? currentNote : n)));
-          
+
           setErrorDialog({
             open: true,
             title: "Connection Error",
@@ -1173,13 +1175,13 @@ export default function BoardPage({
       }
     } catch (error) {
       console.error("Error deleting checklist item:", error);
-      
+
       // Revert optimistic update on network error
       const currentNote = notes.find((n) => n.id === noteId);
       if (currentNote) {
         setNotes(notes.map((n) => (n.id === noteId ? currentNote : n)));
       }
-      
+
       setErrorDialog({
         open: true,
         title: "Connection Error",
@@ -1293,6 +1295,88 @@ export default function BoardPage({
       console.error("Error splitting checklist item:", error);
     }
   };
+  
+  const handleAddCommentFromComponent = async (noteId: string, content: string) => {
+    try {
+      const currentNote = notes.find((n) => n.id === noteId);
+      if (!currentNote) return;
+
+      const targetBoardId =
+        boardId === "all-notes" && currentNote.board?.id
+          ? currentNote.board.id
+          : boardId;
+
+      const response = await fetch(
+        `/api/boards/${targetBoardId}/notes/${noteId}/comments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            content,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const { comment } = await response.json();
+
+        // Ensure comment has user information
+        const commentWithUser = {
+          ...comment,
+          user: comment.user || user, // Add user info if not present
+        };
+
+        setNotes(
+          notes.map((n) =>
+            n.id === noteId
+              ? {
+                ...n,
+                comments: [...(n.comments || []), commentWithUser]
+              }
+              : n
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error adding comment:", error);
+    }
+  };
+
+  const handleDeleteCommentFromComponent = async (noteId: string, commentId: string) => {
+    try {
+      const currentNote = notes.find((n) => n.id === noteId);
+      if (!currentNote) return;
+
+      const targetBoardId =
+        boardId === "all-notes" && currentNote.board?.id
+          ? currentNote.board.id
+          : boardId;
+
+      const response = await fetch(
+        `/api/boards/${targetBoardId}/notes/${noteId}/comments/${commentId}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (response.ok) {
+        setNotes(
+          notes.map((n) =>
+            n.id === noteId
+              ? {
+                ...n,
+                comments: n.comments?.filter((c) => c.id !== commentId),
+              }
+              : n
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+    }
+  };
 
   if (loading) {
     return <FullPageLoader message="Loading board..." />;
@@ -1305,7 +1389,6 @@ export default function BoardPage({
       </div>
     );
   }
-
 
   return (
     <div className="min-h-screen max-w-screen bg-background dark:bg-zinc-950">
@@ -1334,9 +1417,8 @@ export default function BoardPage({
                   </div>
                 </div>
                 <ChevronDown
-                  className={`w-4 h-4 text-muted-foreground dark:text-zinc-400 transition-transform ${
-                    showBoardDropdown ? "rotate-180" : ""
-                  }`}
+                  className={`w-4 h-4 text-muted-foreground dark:text-zinc-400 transition-transform ${showBoardDropdown ? "rotate-180" : ""
+                    }`}
                 />
               </button>
 
@@ -1346,11 +1428,10 @@ export default function BoardPage({
                     {/* All Notes Option */}
                     <Link
                       href="/boards/all-notes"
-                      className={`block px-4 py-2 text-sm hover:bg-accent dark:hover:bg-zinc-800 ${
-                        boardId === "all-notes"
+                      className={`block px-4 py-2 text-sm hover:bg-accent dark:hover:bg-zinc-800 ${boardId === "all-notes"
                           ? "bg-blue-50 dark:bg-zinc-900/70 text-blue-700 dark:text-blue-300"
                           : "text-foreground dark:text-zinc-100"
-                      }`}
+                        }`}
                       onClick={() => setShowBoardDropdown(false)}
                     >
                       <div className="font-medium">All notes</div>
@@ -1382,11 +1463,10 @@ export default function BoardPage({
                       <Link
                         key={b.id}
                         href={`/boards/${b.id}`}
-                        className={`block px-4 py-2 text-sm hover:bg-accent dark:hover:bg-zinc-800 ${
-                          b.id === boardId
+                        className={`block px-4 py-2 text-sm hover:bg-accent dark:hover:bg-zinc-800 ${b.id === boardId
                             ? "bg-blue-50 dark:bg-zinc-900/70 text-blue-700 dark:text-blue-300"
                             : "text-foreground dark:text-zinc-100"
-                        }`}
+                          }`}
                         onClick={() => setShowBoardDropdown(false)}
                       >
                         <div className="font-medium">{b.name}</div>
@@ -1510,9 +1590,8 @@ export default function BoardPage({
                   {user?.name?.split(" ")[0] || "User"}
                 </span>
                 <ChevronDown
-                  className={`w-4 h-4 text-muted-foreground dark:text-gray-400 transition-transform ${
-                    showUserDropdown ? "rotate-180" : ""
-                  }`}
+                  className={`w-4 h-4 text-muted-foreground dark:text-gray-400 transition-transform ${showUserDropdown ? "rotate-180" : ""
+                    }`}
                 />
               </button>
 
@@ -1570,7 +1649,9 @@ export default function BoardPage({
               onEditChecklistItem={handleEditChecklistItem}
               onDeleteChecklistItem={handleDeleteChecklistItem}
               onSplitChecklistItem={handleSplitChecklistItem}
-              showBoardName={boardId === "all-notes" || boardId === "archive"}
+              onAddComment={handleAddCommentFromComponent}
+              onDeleteComment={handleDeleteCommentFromComponent}
+              showBoardName={boardId === "all-notes"}
               className="note-background"
               style={{
                 position: "absolute",
@@ -1579,7 +1660,12 @@ export default function BoardPage({
                 width: note.width,
                 height: note.height,
                 padding: `${getResponsiveConfig().notePadding}px`,
-                backgroundColor: resolvedTheme === 'dark' ? "#18181B" : note.color,
+                backgroundColor:
+                  typeof window !== "undefined" &&
+                    window.matchMedia &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches
+                    ? `${note.color}20`
+                    : note.color,
               }}
             />
           ))}
@@ -1801,18 +1887,18 @@ export default function BoardPage({
               Configure settings for &quot;{board?.name}&quot; board.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          
+
           <div className="py-4">
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="sendSlackUpdates"
                 checked={boardSettings.sendSlackUpdates}
-                onCheckedChange={(checked) => 
+                onCheckedChange={(checked) =>
                   setBoardSettings({ sendSlackUpdates: checked as boolean })
                 }
               />
-              <label 
-                htmlFor="sendSlackUpdates" 
+              <label
+                htmlFor="sendSlackUpdates"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-foreground dark:text-zinc-100"
               >
                 Send updates to Slack
